@@ -1,0 +1,5 @@
+{
+  "name": "ScholarMind",
+  "description": "An intelligent literature companion that visualizes academic papers into interactive mind maps with deep links to the original text.",
+  "requestFramePermissions": []
+}
