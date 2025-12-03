@@ -21,9 +21,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({ data }) => {
          </div>
          
          <div className="prose prose-slate prose-sm sm:prose-base max-w-none">
-            {/* Simple Markdown rendering for the summary. 
-                For a production app, use 'react-markdown' here. 
-                We will simulate paragraph breaks for now. */}
             {data.markdownSummary.split('\n').map((line, idx) => {
                 const trimmed = line.trim();
                 if (!trimmed) return <div key={idx} className="h-4" />;

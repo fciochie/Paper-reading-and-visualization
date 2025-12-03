@@ -15,8 +15,8 @@ export interface MindMapNode {
 
 export interface MindMapData {
   root: MindMapNode;
-  markdownSummary: string; // Global summary of the paper
-  researchReport: string; // New: Future research directions
+  markdownSummary: string; // Abstract
+  researchReport: string; // Future research directions
 }
 
 export interface ProcessingStatus {
@@ -76,7 +76,6 @@ export interface PDFPageProxy {
   render: (params: PDFRenderParams) => PDFRenderTask;
 }
 
-// Augment window for PDF.js
 declare global {
   interface Window {
     pdfjsLib: {

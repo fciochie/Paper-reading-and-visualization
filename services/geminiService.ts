@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { MindMapData, MindMapNode } from '../types';
 
 export const generateMindMap = async (text: string): Promise<MindMapData> => {
@@ -9,36 +9,29 @@ export const generateMindMap = async (text: string): Promise<MindMapData> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const systemInstruction = `
-    You are an expert academic researcher. 
-    Your task is to analyze the provided text from a research paper or document.
-    
-    1. Generate a comprehensive "Executive Summary" in Markdown format (Chinese).
-    2. Create a hierarchical mind map of the core concepts.
-    3. Generate a "Research Extension Report" (Chinese). This should list 3-5 concrete future research directions, potential experiments, or areas for improvement based on the paper's limitations or results.
-    
-    IMPORTANT LANGUAGE REQUIREMENT:
-    - The 'label' and 'summary' fields MUST be in Simplified Chinese (简体中文).
-    - Translate technical terms accurately to Chinese.
-    - The 'quote' MUST be the EXACT verbatim English text from the document.
-    
-    Output a JSON object with:
-    - markdownSummary: A detailed summary of the paper in Chinese (Markdown supported).
-    - researchReport: A report on future research directions in Chinese (Markdown supported).
-    - nodes: A flat list of all nodes in the map.
-    
-    Each node object must have:
-    - id: unique string
-    - parentId: string (the id of the parent node) OR null (if it is the root node)
-    - label: short title in Chinese (max 10 words)
-    - summary: 1 sentence explanation in Chinese
-    - quote: A verbatim short string (approx 20-50 words) from the original text that best defines this concept. This allows the user to find the location in the PDF.
-    - pageNumber: integer (the page number where this concept is most prominently discussed based on "--- PAGE X ---" markers)
+    You are an expert academic assistant and translator.
+    Your task is to analyze the provided research paper text and generate a structured knowledge graph.
 
-    Rules:
-    1. There must be exactly ONE root node (parentId: null).
-    2. All other nodes must have a valid parentId that exists in the list.
-    3. The structure should be balanced (max depth 3-4).
-    4. Ensure the content covers the main contributions, methodology, and results of the paper.
+    CRITICAL INSTRUCTION:
+    All output must be in **Simplified Chinese (简体中文)**, EXCEPT for the 'quote' field which must remain in the original English.
+
+    TASKS:
+    1. **Abstract**: Generate a comprehensive "Executive Summary" (Abstract) in Simplified Chinese.
+    2. **Structure (Mind Map)**:
+       - **Level 1 Nodes**: Must match the paper's actual **Section Headers** (e.g., "1. Introduction").
+         - **ACTION**: Keep the number (1.), but **TRANSLATE the text to Chinese** (e.g., "1. 引言").
+       - **Level 2 Nodes**: Must match the **Subsection Headers** (e.g., "2.1 Methodology").
+         - **ACTION**: Keep the number (2.1), but **TRANSLATE the text to Chinese**.
+       - **Level 3 Nodes**: Summary points. Summarize the key insights of that section in Chinese.
+    3. **Research**: Create a "Future Research & Extension Report" in Chinese.
+
+    SCHEMA RULES:
+    - 'parentId' should be null for top-level Section Headers (Level 1).
+    - 'parentId' for subsections should point to their Section's ID.
+    - 'quote': Extract a verbatim English text snippet from the PDF for deep linking.
+    - 'pageNumber': Best guess integer.
+
+    Output pure JSON matching the schema.
   `;
 
   try {
@@ -59,7 +52,7 @@ export const generateMindMap = async (text: string): Promise<MindMapData> => {
                 type: Type.OBJECT,
                 properties: {
                   id: { type: Type.STRING },
-                  parentId: { type: Type.STRING, nullable: true },
+                  parentId: { type: Type.STRING },
                   label: { type: Type.STRING },
                   summary: { type: Type.STRING },
                   quote: { type: Type.STRING },
@@ -68,7 +61,8 @@ export const generateMindMap = async (text: string): Promise<MindMapData> => {
                 required: ['id', 'label', 'summary', 'pageNumber']
               }
             }
-          }
+          },
+          required: ['markdownSummary', 'researchReport', 'nodes']
         }
       }
     });
@@ -77,12 +71,24 @@ export const generateMindMap = async (text: string): Promise<MindMapData> => {
       throw new Error("No response text from AI");
     }
 
-    const data = JSON.parse(response.text);
+    // Clean potential markdown code blocks if the model ignores MIME type
+    const cleanText = response.text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+    
+    let data;
+    try {
+      data = JSON.parse(cleanText);
+    } catch (e) {
+      console.error("JSON Parse Error. Raw text:", response.text);
+      throw new Error("Failed to parse AI response as JSON.");
+    }
+
     if (!data.nodes || !Array.isArray(data.nodes)) {
        throw new Error("Invalid response structure: 'nodes' array missing");
     }
     
+    // Use the tree builder
     const treeData = buildTreeFromFlatList(data.nodes);
+    
     treeData.markdownSummary = data.markdownSummary || "Generating summary failed.";
     treeData.researchReport = data.researchReport || "Generating report failed.";
     
@@ -98,13 +104,15 @@ export const generateMindMap = async (text: string): Promise<MindMapData> => {
 // Helper to reconstruct the tree from the flat list
 function buildTreeFromFlatList(flatNodes: any[]): MindMapData {
     const nodeMap = new Map<string, MindMapNode>();
-    let root: MindMapNode | null = null;
 
-    // 1. Create all node instances
+    // 1. Initialize all nodes
     flatNodes.forEach(raw => {
-        nodeMap.set(raw.id, {
-            id: raw.id,
-            label: raw.label || "Untitled",
+        // Ensure ID is a string
+        const safeId = String(raw.id);
+        
+        nodeMap.set(safeId, {
+            id: safeId,
+            label: raw.label || "未命名", // Chinese default
             summary: raw.summary || "",
             quote: raw.quote || "",
             pageNumber: typeof raw.pageNumber === 'number' ? raw.pageNumber : 1,
@@ -112,34 +120,41 @@ function buildTreeFromFlatList(flatNodes: any[]): MindMapData {
         });
     });
 
-    // 2. Link children to parents
+    // 2. Create a Synthetic Root to hold the entire paper structure
+    const syntheticRoot: MindMapNode = {
+        id: 'root-synthetic',
+        label: '文档概览', // Document Overview in Chinese
+        summary: '论文交互式导图',
+        pageNumber: 1,
+        children: []
+    };
+
+    // 3. Link children to parents
     flatNodes.forEach(raw => {
-        const node = nodeMap.get(raw.id);
+        const safeId = String(raw.id);
+        const node = nodeMap.get(safeId);
         if (!node) return;
 
-        const pId = (raw.parentId === "null" || raw.parentId === "") ? null : raw.parentId;
+        // Clean parentId
+        let pId = raw.parentId;
+        if (pId === "null" || pId === null || pId === undefined) pId = null;
+        else pId = String(pId);
 
-        if (pId) {
+        if (pId && nodeMap.has(pId)) {
             const parent = nodeMap.get(pId);
-            if (parent) {
-                parent.children = parent.children || [];
-                parent.children.push(node);
-            }
+            parent!.children = parent!.children || [];
+            parent!.children.push(node);
         } else {
-            // Found a root candidate
-            if (!root) root = node;
+            // Top-level Section -> Add to synthetic root
+            syntheticRoot.children!.push(node);
         }
     });
 
-    // Fallback if no root is explicitly defined
-    if (!root) {
-        if (nodeMap.size > 0) {
-             root = nodeMap.values().next().value;
-             console.warn("No explicit root found, using first node.");
-        } else {
-             throw new Error("The mind map returned by AI was empty.");
-        }
+    // Fallback: If root has no children but we have nodes, attach them
+    if (syntheticRoot.children!.length === 0 && nodeMap.size > 0) {
+        console.warn("No linked top-level nodes found, attaching all orphans to root");
+        nodeMap.forEach(node => syntheticRoot.children!.push(node));
     }
 
-    return { root: root!, markdownSummary: "", researchReport: "" };
+    return { root: syntheticRoot, markdownSummary: "", researchReport: "" };
 }

@@ -4,7 +4,7 @@ import { ZoomIn, ZoomOut, Palette } from 'lucide-react';
 
 interface PDFViewerProps {
   file: File | null;
-  currentPage: number; // Target page to scroll to
+  currentPage: number; 
   highlightText?: string;
 }
 
@@ -35,7 +35,6 @@ const PDFPage: React.FC<PDFPageProps> = ({
     const [isRendered, setIsRendered] = useState(false);
     const [isVisible, setIsVisible] = useState(false);
 
-    // 1. Intersection Observer for Lazy Loading & Visibility Tracking
     useEffect(() => {
         const observer = new IntersectionObserver(
             ([entry]) => {
@@ -46,7 +45,7 @@ const PDFPage: React.FC<PDFPageProps> = ({
                     setIsVisible(false);
                 }
             },
-            { rootMargin: '200px', threshold: 0.1 } // Render 200px before viewport
+            { rootMargin: '200px', threshold: 0.1 }
         );
 
         if (containerRef.current) {
@@ -56,13 +55,8 @@ const PDFPage: React.FC<PDFPageProps> = ({
         return () => observer.disconnect();
     }, [pageNum, onVisible]);
 
-    // 2. Render Page Content
     useEffect(() => {
         if (!isVisible || !pdfDoc || !canvasRef.current) return;
-        
-        // If already rendered with same scale, skip
-        // Note: In a real app we'd handle scale changes more robustly (re-render)
-        // Here we just re-render if visible
         
         const render = async () => {
             if (renderTaskRef.current) {
@@ -77,11 +71,9 @@ const PDFPage: React.FC<PDFPageProps> = ({
                 const context = canvas.getContext('2d');
                 if (!context) return;
 
-                // Set dimensions
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
 
-                // Render Canvas
                 const renderContext = {
                     canvasContext: context,
                     viewport: viewport,
@@ -90,7 +82,6 @@ const PDFPage: React.FC<PDFPageProps> = ({
                 renderTaskRef.current = task;
                 await task.promise;
 
-                // Render Text Layer
                 if (textLayerRef.current) {
                     textLayerRef.current.innerHTML = '';
                     textLayerRef.current.style.width = `${viewport.width}px`;
@@ -118,17 +109,13 @@ const PDFPage: React.FC<PDFPageProps> = ({
         };
     }, [isVisible, pdfDoc, pageNum, scale, highlightText, highlightColor, highlightOpacity]);
 
-    // Helper: Render Text Layer & Highlights
     const renderTextLayer = (textContent: TextContent, viewport: PDFPageViewport, container: HTMLElement, highlight?: string, color: string = '#fef08a', opacity: number = 0.5) => {
-        // Normalize highlight text
         const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
         const cleanHighlight = highlight ? normalize(highlight) : null;
         
         const highlightLayer = document.createElement('div');
         highlightLayer.className = 'pdf-highlight-layer';
         container.appendChild(highlightLayer);
-
-        let matchFound = false;
 
         textContent.items.forEach((item) => {
             const tx = window.pdfjsLib.Util.transform(viewport.transform, item.transform);
@@ -144,9 +131,7 @@ const PDFPage: React.FC<PDFPageProps> = ({
 
             if (cleanHighlight && item.str.length > 3) {
                 const cleanStr = normalize(item.str);
-                // Fuzzy check
                 if (cleanHighlight.includes(cleanStr) || cleanStr.includes(cleanHighlight)) {
-                    matchFound = true;
                     const rect = document.createElement('div');
                     rect.className = 'highlight-rect';
                     rect.style.backgroundColor = color;
@@ -159,9 +144,6 @@ const PDFPage: React.FC<PDFPageProps> = ({
                 }
             }
         });
-        
-        // Auto-scroll to highlight if this is the target page
-        // We only auto-scroll if this exact page was requested via props (handled by parent ref)
     };
 
     return (
@@ -172,10 +154,8 @@ const PDFPage: React.FC<PDFPageProps> = ({
     );
 };
 
-// Main PDF Viewer Component
 const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.2); 
@@ -183,7 +163,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText 
   const [highlightOpacity, setHighlightOpacity] = useState(0.5);
   const [visiblePage, setVisiblePage] = useState(1);
 
-  // Load PDF
   useEffect(() => {
     if (!file) return;
     const loadPdf = async () => {
@@ -200,17 +179,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText 
     loadPdf();
   }, [file]);
 
-  // Handle external navigation (clicking a map node)
   useEffect(() => {
       if (!pdfDoc) return;
-      // Scroll to the specific page element
+      // Scroll to page with header offset
       const element = document.getElementById(`pdf-page-${currentPage}`);
       if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
   }, [currentPage, pdfDoc]);
 
-  // Update visible page indicator
   const handlePageVisible = useCallback((pageNum: number) => {
       setVisiblePage(pageNum);
   }, []);
@@ -227,21 +204,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText 
 
   return (
     <div className="w-full h-full bg-slate-800 flex flex-col relative">
-       {/* Header Toolbar */}
+       {/* Toolbar */}
        <div className="h-12 bg-slate-900 flex items-center px-4 text-white text-xs border-b border-slate-700 shrink-0 z-10 gap-4 overflow-x-auto no-scrollbar">
          <span className="font-semibold text-indigo-400 shrink-0 hidden md:inline">Doc Viewer</span>
-         
          <div className="h-6 w-px bg-slate-700 shrink-0"></div>
-
-         {/* Color Picker */}
          <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={() => setHighlightColor('#fef08a')} className={`w-4 h-4 rounded-full bg-yellow-200 border-2 ${highlightColor === '#fef08a' ? 'border-white' : 'border-transparent'}`} />
             <button onClick={() => setHighlightColor('#bbf7d0')} className={`w-4 h-4 rounded-full bg-green-200 border-2 ${highlightColor === '#bbf7d0' ? 'border-white' : 'border-transparent'}`} />
             <button onClick={() => setHighlightColor('#bfdbfe')} className={`w-4 h-4 rounded-full bg-blue-200 border-2 ${highlightColor === '#bfdbfe' ? 'border-white' : 'border-transparent'}`} />
             <button onClick={() => setHighlightColor('#fbcfe8')} className={`w-4 h-4 rounded-full bg-pink-200 border-2 ${highlightColor === '#fbcfe8' ? 'border-white' : 'border-transparent'}`} />
          </div>
-
-         {/* Saturation Slider */}
          <div className="flex items-center gap-2 w-24 shrink-0" title="Highlight Intensity">
             <Palette className="w-3 h-3 text-slate-400" />
             <input 
@@ -254,15 +226,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText 
                 className="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer"
             />
          </div>
-
          <div className="h-6 w-px bg-slate-700 shrink-0"></div>
-
-         {/* Zoom & Page Info */}
          <div className="flex items-center gap-2 ml-auto shrink-0">
             <button onClick={() => setScale(s => Math.max(s-0.1, 0.5))} className="p-1 hover:bg-slate-700 rounded"><ZoomOut className="w-4 h-4"/></button>
             <span className="w-10 text-center text-slate-400">{Math.round(scale * 100)}%</span>
             <button onClick={() => setScale(s => Math.min(s+0.1, 3.0))} className="p-1 hover:bg-slate-700 rounded"><ZoomIn className="w-4 h-4"/></button>
-            
             <div className="bg-indigo-600 px-2 py-0.5 rounded text-white font-mono shadow-sm ml-2">
                 Page {visiblePage} / {pdfDoc?.numPages || '-'}
             </div>
@@ -273,16 +241,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ file, currentPage, highlightText 
        <div 
           ref={scrollContainerRef} 
           onWheel={handleWheel}
-          className="flex-1 overflow-auto bg-slate-800/50 pt-8 pb-32 px-4"
+          className="flex-1 overflow-auto bg-slate-800/50 pt-8 pb-32 px-4 scroll-smooth"
        >
           <div className="flex flex-col items-center">
               {pdfDoc && Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map((pageNum) => (
-                  <div id={`pdf-page-${pageNum}`} key={pageNum}>
+                  <div id={`pdf-page-${pageNum}`} key={pageNum} className="scroll-mt-14">
                     <PDFPage 
                         pdfDoc={pdfDoc}
                         pageNum={pageNum}
                         scale={scale}
-                        highlightText={pageNum === currentPage ? highlightText : undefined} // Only highlight on active page context or global if preferred
+                        highlightText={pageNum === currentPage ? highlightText : undefined}
                         highlightColor={highlightColor}
                         highlightOpacity={highlightOpacity}
                         onVisible={handlePageVisible}
